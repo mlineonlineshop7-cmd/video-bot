@@ -190,8 +190,42 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    logger.info("Bot başlatılıyor...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Render.com "Web Service" (ücretsiz plan) modunda çalışıyoruz.
+    # Render otomatik olarak PORT ve RENDER_EXTERNAL_URL ortam
+    # değişkenlerini sağlar; kendi bilgisayarında/VPS'te çalıştırırsan
+    # (webhook yerine polling istersen) WEBHOOK_MODE=0 ortam değişkenini
+    # ayarlayabilirsin.
+    webhook_mode = os.environ.get("WEBHOOK_MODE", "1") == "1"
+
+    if not webhook_mode:
+        logger.info("Bot polling modunda başlatılıyor...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        return
+
+    port = int(os.environ.get("PORT", "8443"))
+    external_url = os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("WEBHOOK_BASE_URL")
+
+    if not external_url:
+        raise SystemExit(
+            "Webhook modu için dış URL bulunamadı. Render'da bu otomatik "
+            "gelir (RENDER_EXTERNAL_URL). Başka bir platformda çalıştırıyorsan "
+            "WEBHOOK_BASE_URL ortam değişkenini elle ayarla (örn. "
+            "https://senin-servisin.onrender.com)."
+        )
+
+    # Token'ı gizli bir url yolu (path) olarak kullanıyoruz ki başkası
+    # webhook adresini tahmin edip sahte istek gönderemesin.
+    url_path = BOT_TOKEN
+    webhook_url = f"{external_url.rstrip('/')}/{url_path}"
+
+    logger.info("Bot webhook modunda başlatılıyor: %s", webhook_url)
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=port,
+        url_path=url_path,
+        webhook_url=webhook_url,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 
 if __name__ == "__main__":
